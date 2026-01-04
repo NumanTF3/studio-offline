@@ -166,7 +166,7 @@ async fn handle_assets_batch(
 
                     if existing_assets.contains(&asset_id_str) {
                         BatchResponseEntry {
-                            location: Some(format!("http://127.0.0.1/ddl/{}", req.assetId)),
+                            location: Some(format!("http://localhost/v1/asset?id={}", req.assetId)),
                             requestId: req.requestId,
                             isArchived: false,
                             assetTypeId: crate::asset_types::asset_type_to_id(&req.assetType)
@@ -222,14 +222,17 @@ async fn handle_asset_by_path(
 async fn serve_asset_logic(state: Arc<AppState>, id: String, req: Request) -> Response {
     let mode = &state.mode;
 
+    // Reflection mode: redirect to Roblox directly
     if mode == "Reflection Mode" {
         return Redirect::temporary(&format!(
             "https://assetdelivery.roblox.com/v1/asset/?id={id}&permissionContext=ignoreUniverse&xcachesplit=0"
-        )).into_response();
+        ))
+        .into_response();
     }
 
     let file_path = PathBuf::from("static/assets").join(&id);
 
+    // Asset Grab Mode: attempt to grab from Roblox if missing
     if mode == "Asset Grab Mode" {
         let url = format!(
             "https://assetdelivery.roblox.com/v1/asset/?id={id}&permissionContext=ignoreUniverse&xcachesplit=0"
@@ -284,6 +287,7 @@ async fn serve_asset_logic(state: Arc<AppState>, id: String, req: Request) -> Re
         }
     }
 
+    // Serve local file if it exists
     if file_path.exists() {
         let service = ServeFile::new(file_path);
         return match service.oneshot(req).await {
@@ -292,20 +296,7 @@ async fn serve_asset_logic(state: Arc<AppState>, id: String, req: Request) -> Re
         };
     }
 
-    if let Ok(mut entries) = tokio::fs::read_dir("static/assets").await {
-        while let Ok(Some(entry)) = entries.next_entry().await {
-            let path = entry.path();
-            if let Some(stem) = path.file_stem()
-                && stem.to_string_lossy() == id
-            {
-                let service = ServeFile::new(path);
-                return match service.oneshot(req).await {
-                    Ok(res) => res.into_response(),
-                    Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-                };
-            }
-        }
-    }
-
-    StatusCode::NOT_FOUND.into_response()
+    // fallback for anything missing in static/assets: redirect to local v1 endpoint
+    let redirect_url = format!("http://localhost/v1/asset?id={}", id);
+    Redirect::temporary(&redirect_url).into_response()
 }
