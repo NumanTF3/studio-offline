@@ -1,5 +1,4 @@
 use axum::Router;
-use inquire::Select;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -13,6 +12,7 @@ use std::path::Path;
 
 #[tokio::main]
 async fn main() {
+    // Initialize logging
     tracing_subscriber::registry()
         .with(tracing_subscriber::EnvFilter::new(
             std::env::var("RUST_LOG").unwrap_or_else(|_| "info".into()),
@@ -20,25 +20,10 @@ async fn main() {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    let modes = vec!["Asset Grab Mode", "Regular Mode", "Reflection Mode"];
-    let mode = Select::new("How do you want to start Studio-Offline?", modes)
-        .prompt()
-        .unwrap_or("No mode selected");
+    // Print loading message
+    println!("Loading Studio...");
 
-    if mode == "No mode selected" {
-        println!("No mode selected, exiting...");
-        return;
-    }
-
-    if mode == "Asset Grab Mode" && !std::path::Path::new("cookie.txt").exists() {
-        tracing::error!("cookie.txt not found in the root directory.");
-        tracing::error!(
-            "This file is REQUIRED for Asset Grab Mode due to recent changes in Roblox's assetdelivery APIs."
-        );
-        tracing::error!("Please create a cookie.txt containing your .ROBLOSECURITY cookie.");
-        return;
-    }
-
+    // Check required static directory
     if !Path::new("./static").exists() {
         tracing::error!(
             "Static directory (required) not found in directory. Please reinstall Studio-Offline."
@@ -46,10 +31,9 @@ async fn main() {
         return;
     }
 
-    println!("Webserver is running on mode: {mode}");
-
+    // Only Regular Mode
     let app_state = Arc::new(AppState {
-        mode: mode.to_string(),
+        mode: "Regular Mode".to_string(),
     });
 
     let app = Router::new()
@@ -64,7 +48,7 @@ async fn main() {
         .merge(routes::universal_app_config::routes())
         .with_state(app_state);
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], 80));
+    let addr = SocketAddr::from(([127, 0, 0, 1], 8080));
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     tracing::info!("listening on {}", addr);
     axum::serve(listener, app).await.unwrap();
